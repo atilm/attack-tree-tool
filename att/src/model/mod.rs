@@ -9,12 +9,26 @@ pub enum TreeError {
 }
 
 pub trait FeasibleStep {
-    fn feasibility(&self) -> FeasibilityAssessment;
+    fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError>;
 }
 
 pub struct OrNode {
     pub description: String,
     pub children: Vec<Box<dyn FeasibleStep>>,
+}
+
+impl FeasibleStep for OrNode {
+    fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
+        if self.children.is_empty() {
+            return Err(TreeError::AssessmentVectorMismatch)
+        }
+        
+        let min_feasibility = self.children.iter()
+            .map(|s| s.feasibility().unwrap())
+            .min_by_key(|f| f.sum());
+
+        Ok(min_feasibility.unwrap())
+    }
 }
 
 pub struct Leaf {
@@ -23,10 +37,10 @@ pub struct Leaf {
 }
 
 impl FeasibleStep for Leaf {
-    fn feasibility(&self) -> FeasibilityAssessment {
+    fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
         FeasibilityAssessment::new(
             &self.criteria.definition,
-            &self.criteria.assessments.0).unwrap()
+            &self.criteria.assessments.0)
     }
 }
 
@@ -46,6 +60,10 @@ impl FeasibilityAssessment {
             definition: Rc::clone(definition),
             assessments: FeasibilityVector(assessments.to_vec())
         })
+    }
+
+    pub fn sum(&self) -> u32 {
+        self.assessments.0.iter().sum()
     }
 }
 
@@ -69,7 +87,7 @@ mod tests {
 
     use super::{
         FeasibilityAssessment, FeasibilityCriteria, FeasibilityVector, FeasibleStep,
-        FeasiblityCriterion, Leaf,
+        FeasiblityCriterion, Leaf, OrNode,
     };
 
     fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
@@ -91,6 +109,15 @@ mod tests {
         FeasibilityAssessment::new(definition, assessments).unwrap()
     }
 
+    fn build_leaf(criteria: &Rc<FeasibilityCriteria>, assessment: &[u32]) -> Leaf {
+        let feasibility = build_feasibility(&criteria, &assessment);
+
+        Leaf {
+            description: "Attack step".to_string(),
+            criteria: feasibility,
+        }
+    }
+
     #[test]
     fn in_feasibility_assessments_the_vector_must_match_the_definition() {
         let criteria = build_criteria(&["Eq", "Kn"]);
@@ -103,17 +130,40 @@ mod tests {
     #[test]
     fn a_leaf_returns_its_feasibility_unmodified() {
         let criteria = build_criteria(&["Eq", "Kn"]);
-        let feasibility = build_feasibility(&criteria, &[1, 2]);
+        let leaf = build_leaf(&criteria, &[1, 2]);
 
-        let leaf = Leaf {
-            description: "Attack step".to_string(),
-            criteria: feasibility,
-        };
-
-        let result = leaf.feasibility();
+        let result = leaf.feasibility().unwrap();
 
         let expected_feasibility = build_feasibility(&criteria, &[1, 2]);
 
         assert_eq!(result.assessments.0, expected_feasibility.assessments.0);
+    }
+
+    #[test]
+    fn an_or_node_without_children_returns_an_error_for_feasibility() {
+        let node = OrNode {
+            description: "An or node".to_string(),
+            children: vec![]
+        };
+
+        assert_eq!(node.feasibility().unwrap_err(), TreeError::AssessmentVectorMismatch);
+    }
+
+    #[test]
+    fn an_or_node_returns_the_minimum_feasibility_of_all_its_child_nodes() {
+        let criteria = build_criteria(&["Eq", "Kn"]);
+
+        let node = OrNode {
+            description: "An or node".to_string(),
+            children: vec![
+                Box::new(build_leaf(&criteria, &[0, 50])),
+                Box::new(build_leaf(&criteria, &[1, 49])),
+                Box::new(build_leaf(&criteria, &[2, 3]))
+            ]
+        };
+
+        let expected_assessment = build_feasibility(&criteria, &[2, 3]);
+
+        assert_eq!(node.feasibility().unwrap().assessments.0, expected_assessment.assessments.0);
     }
 }
