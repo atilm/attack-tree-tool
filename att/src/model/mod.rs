@@ -31,6 +31,44 @@ impl FeasibleStep for OrNode {
     }
 }
 
+pub struct AndNode {
+    pub description: String,
+    pub children: Vec<Box<dyn FeasibleStep>>,
+}
+
+impl FeasibleStep for AndNode {
+    fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
+        if self.children.is_empty() {
+            return Err(TreeError::AssessmentVectorMismatch)
+        }
+
+        // extract assessent definition
+        let criteria = &self.children.first().unwrap().feasibility().unwrap().definition;
+        
+        // extract assessment
+        let assessments: Vec<_> = self.children.iter()
+            .filter_map(|s| s.feasibility().ok())
+            .map(|a| a.assessments)
+            .collect();
+
+        // transpose the values
+        let mut assessments_per_category: Vec<Vec<u32>> = vec![Vec::new(); assessments.len()];
+        for assessment in assessments.iter() {
+            for (category, value) in assessment.0.iter().enumerate() {
+                assessments_per_category[category].push(*value);
+            }
+        }
+
+        // find maximum per component
+        let new_assessment: Vec<u32> = assessments_per_category.iter()
+            .filter_map(|v| v.iter().max())
+            .map(|v| *v)
+            .collect();
+
+        FeasibilityAssessment::new(criteria, &new_assessment)
+    }
+}
+
 pub struct Leaf {
     pub description: String,
     pub criteria: FeasibilityAssessment,
@@ -75,8 +113,8 @@ pub struct FeasibilityCriteria(Vec<FeasiblityCriterion>);
 
 #[derive(Debug)]
 pub struct FeasiblityCriterion {
-    name: String,
-    id: String,
+    _name: String,
+    _id: String,
 }
 
 #[cfg(test)]
@@ -86,8 +124,8 @@ mod tests {
     use crate::model::TreeError;
 
     use super::{
-        FeasibilityAssessment, FeasibilityCriteria, FeasibilityVector, FeasibleStep,
-        FeasiblityCriterion, Leaf, OrNode,
+        FeasibilityAssessment, FeasibilityCriteria, FeasibleStep,
+        FeasiblityCriterion, Leaf, OrNode, AndNode,
     };
 
     fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
@@ -95,8 +133,8 @@ mod tests {
             names
                 .iter()
                 .map(|n| FeasiblityCriterion {
-                    name: n.to_string(),
-                    id: n.to_string(),
+                    _name: n.to_string(),
+                    _id: n.to_string(),
                 })
                 .collect(),
         ))
@@ -154,7 +192,7 @@ mod tests {
         let criteria = build_criteria(&["Eq", "Kn"]);
 
         let node = OrNode {
-            description: "An or node".to_string(),
+            description: "An or-node".to_string(),
             children: vec![
                 Box::new(build_leaf(&criteria, &[0, 50])),
                 Box::new(build_leaf(&criteria, &[1, 49])),
@@ -163,6 +201,34 @@ mod tests {
         };
 
         let expected_assessment = build_feasibility(&criteria, &[2, 3]);
+
+        assert_eq!(node.feasibility().unwrap().assessments.0, expected_assessment.assessments.0);
+    }
+
+    #[test]
+    fn an_and_node_without_children_returns_an_error_for_feasibility() {
+        let node = AndNode {
+            description: "An and-node".to_string(),
+            children: vec![]
+        };
+
+        assert_eq!(node.feasibility().unwrap_err(), TreeError::AssessmentVectorMismatch);
+    }
+
+    #[test]
+    fn an_and_node_returns_a_feasibility_with_maximum_components_of_all_children() {
+        let criteria = build_criteria(&["Eq", "Kn", "WO"]);
+
+        let node = AndNode {
+            description: "An and-node".to_string(),
+            children: vec![
+                Box::new(build_leaf(&criteria, &[1, 6, 8])),
+                Box::new(build_leaf(&criteria, &[2, 4, 9])),
+                Box::new(build_leaf(&criteria, &[3, 5, 7]))
+            ]
+        };
+
+        let expected_assessment = build_feasibility(&criteria, &[3, 6, 9]);
 
         assert_eq!(node.feasibility().unwrap().assessments.0, expected_assessment.assessments.0);
     }
