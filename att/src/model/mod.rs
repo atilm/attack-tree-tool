@@ -96,10 +96,7 @@ impl FeasibilityAssessment {
             .map(|(a, b)| *std::cmp::max(a, b))
             .collect();
 
-        Ok(FeasibilityAssessment {
-            definition: Rc::clone(&self.definition),
-            assessments: FeasibilityVector(maxima)
-        })
+        FeasibilityAssessment::new(&self.definition, &maxima)
     }
 }
 
