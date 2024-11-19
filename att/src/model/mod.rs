@@ -42,30 +42,12 @@ impl FeasibleStep for AndNode {
             return Err(TreeError::AssessmentVectorMismatch)
         }
 
-        // extract assessent definition
-        let criteria = &self.children.first().unwrap().feasibility().unwrap().definition;
-        
-        // extract assessment
-        let assessments: Vec<_> = self.children.iter()
+        let maximum_assessment = self.children.iter()
             .filter_map(|s| s.feasibility().ok())
-            .map(|a| a.assessments)
-            .collect();
+            .reduce(|a, b| a.component_wise_max(&b).unwrap())
+            .unwrap();
 
-        // transpose the values
-        let mut assessments_per_category: Vec<Vec<u32>> = vec![Vec::new(); assessments.len()];
-        for assessment in assessments.iter() {
-            for (category, value) in assessment.0.iter().enumerate() {
-                assessments_per_category[category].push(*value);
-            }
-        }
-
-        // find maximum per component
-        let new_assessment: Vec<u32> = assessments_per_category.iter()
-            .filter_map(|v| v.iter().max())
-            .map(|v| *v)
-            .collect();
-
-        FeasibilityAssessment::new(criteria, &new_assessment)
+        Ok(maximum_assessment)
     }
 }
 
@@ -102,6 +84,22 @@ impl FeasibilityAssessment {
 
     pub fn sum(&self) -> u32 {
         self.assessments.0.iter().sum()
+    }
+
+    pub fn component_wise_max(&self, other: &FeasibilityAssessment) -> Result<FeasibilityAssessment, TreeError> {
+        if self.assessments.0.len() != other.assessments.0.len() {
+            return Err(TreeError::AssessmentVectorMismatch);
+        }
+
+        let maxima: Vec<u32> = self.assessments.0.iter()
+            .zip(other.assessments.0.iter())
+            .map(|(a, b)| *std::cmp::max(a, b))
+            .collect();
+
+        Ok(FeasibilityAssessment {
+            definition: Rc::clone(&self.definition),
+            assessments: FeasibilityVector(maxima)
+        })
     }
 }
 
