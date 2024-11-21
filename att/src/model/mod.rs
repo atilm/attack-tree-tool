@@ -9,6 +9,8 @@ pub enum TreeError {
 }
 
 pub trait FeasibleStep {
+    fn title(&self) -> &str;
+
     fn feasibility_value(&self) -> u32 {
         let feasibility = self.feasibility();
         match feasibility {
@@ -39,6 +41,10 @@ impl FeasibleStep for OrNode {
 
         Ok(min_feasibility.unwrap())
     }
+    
+    fn title(&self) -> &str {
+        &self.description
+    }
 }
 
 pub struct AndNode {
@@ -61,6 +67,10 @@ impl FeasibleStep for AndNode {
 
         Ok(maximum_assessment)
     }
+    
+    fn title(&self) -> &str {
+        &self.description
+    }
 }
 
 pub struct Leaf {
@@ -71,6 +81,10 @@ pub struct Leaf {
 impl FeasibleStep for Leaf {
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
         FeasibilityAssessment::new(&self.criteria.definition, &self.criteria.assessments.0)
+    }
+
+    fn title(&self) -> &str {
+        &self.description
     }
 }
 
@@ -123,16 +137,16 @@ impl FeasibilityAssessment {
 pub struct FeasibilityVector(Vec<u32>);
 
 #[derive(Debug)]
-pub struct FeasibilityCriteria(Vec<FeasiblityCriterion>);
+pub struct FeasibilityCriteria(pub Vec<FeasiblityCriterion>);
 
 #[derive(Debug)]
 pub struct FeasiblityCriterion {
-    _name: String,
+    pub name: String,
     _id: String,
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use std::rc::Rc;
 
     use crate::model::TreeError;
@@ -142,12 +156,12 @@ mod tests {
         Leaf, OrNode,
     };
 
-    fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
+    pub fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
         Rc::new(FeasibilityCriteria(
             names
                 .iter()
                 .map(|n| FeasiblityCriterion {
-                    _name: n.to_string(),
+                    name: n.to_string(),
                     _id: n.to_string(),
                 })
                 .collect(),
