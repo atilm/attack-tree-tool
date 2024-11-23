@@ -143,7 +143,7 @@ impl FeasibleStep for Leaf {
     }
 
     fn add_child(&self, _child: &Rc<dyn FeasibleStep>) {
-        panic!("Attempt to add a child to an attack tree node.");
+        panic!("Attempt to add a child to an attack tree leaf.");
     }
     
     fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {

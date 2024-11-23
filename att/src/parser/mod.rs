@@ -84,7 +84,15 @@ impl AttackTreeParser {
                             self.current_node.clone(),
                         )));
                         self.state = ParserState::SkipToLineEnd;
-                    } else if c != ' ' {
+                    } else if c == '|' {
+                        self.current_node_type = NodeType::OrNode;
+                        self.add_node(Rc::new(OrNode::new(
+                            &self.title,
+                            self.current_node.clone(),
+                        )));
+                        self.state = ParserState::SkipToLineEnd;
+                    }
+                    else if c != ' ' {
                         self.current_node_type = NodeType::Leaf;
                         self.assessment_value.clear();
                         self.assessment_title.clear();
@@ -256,5 +264,24 @@ Break into house;&
 
         assert_eq!(result.title(), "Break into house");
         assert_eq!(result.feasibility_value(), 6 + 3);
+    }
+
+    #[test]
+    fn an_or_node_with_two_leafs_can_be_parsed() {
+        let definition = build_criteria(&["Eq", "Kn"]);
+
+        let mut file_stub = io::Cursor::new(
+            r#"
+Enter house;|
+    Trick people; Kn=6, Eq=0
+    Pick lock; Kn=5, Eq=3"#,
+        );
+
+        let mut parser = AttackTreeParser::new();
+
+        let result = parser.parse(&mut file_stub, &definition).unwrap();
+
+        assert_eq!(result.title(), "Enter house");
+        assert_eq!(result.feasibility_value(), 6 + 0);
     }
 }
