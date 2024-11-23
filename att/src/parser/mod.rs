@@ -39,6 +39,7 @@ pub struct AttackTreeParser {
     previous_indentation: u32,
     current_indentation: u32,
     current_node: Option<Rc<dyn FeasibleStep>>,
+    last_added_node: Option<Rc<dyn FeasibleStep>>,
 }
 
 impl AttackTreeParser {
@@ -54,6 +55,7 @@ impl AttackTreeParser {
             previous_indentation: 0,
             current_indentation: 0,
             current_node: None,
+            last_added_node: None
         }
     }
 
@@ -116,9 +118,10 @@ impl AttackTreeParser {
                         // todo: make parent of current node to parent, if indentation decreased
                         self.previous_indentation = self.current_indentation;
                         self.current_indentation = self.indentation_counter;
+
+                        self.state = ParserState::InTitle;
                         self.title.clear();
                         self.title.push(c);
-                        self.state = ParserState::InTitle;
                     }
                 }
                 ParserState::InAssessmentName => {
@@ -169,9 +172,17 @@ impl AttackTreeParser {
     fn add_node(&mut self, node: Rc<dyn FeasibleStep>) {
         if self.current_node.is_none() {
             self.current_node = Some(node.clone());
+            self.last_added_node = Some(node.clone());
         } else {
-            let t = self.current_node.as_ref();
-            t.unwrap().add_child(&node);
+            if self.current_indentation > self.previous_indentation {
+                self.current_node.replace(self.last_added_node.as_ref().unwrap().clone());
+            }
+            if self.current_indentation < self.previous_indentation {
+                self.current_node.replace(self.current_node.as_ref().unwrap().get_parent().unwrap());
+            }
+
+            self.current_node.as_ref().unwrap().add_child(&node);
+            self.last_added_node.replace(node.clone());
         }
     }
 
@@ -283,5 +294,28 @@ Enter house;|
 
         assert_eq!(result.title(), "Enter house");
         assert_eq!(result.feasibility_value(), 6 + 0);
+    }
+
+    #[test]
+    fn a_multi_level_tree_can_be_parsed() {
+        let definition = build_criteria(&["Eq", "Kn"]);
+
+        let mut file_stub = io::Cursor::new(
+            r#"
+Enter house;&
+    Observe when people are away;|
+        Step 1; Kn=15, Eq=5
+        Step 2; Kn=1, Eq=3
+    Break into the house;&
+        Step 3; Kn=0, Eq=2
+        Step 4; Kn=4, Eq=0"#,
+        );
+
+        let mut parser = AttackTreeParser::new();
+
+        let result = parser.parse(&mut file_stub, &definition).unwrap();
+
+        assert_eq!(result.title(), "Enter house");
+        assert_eq!(result.feasibility_value(), 4 + 3);
     }
 }
