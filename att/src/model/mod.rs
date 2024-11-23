@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{borrow::BorrowMut, cell::{Cell, RefCell}, ops::DerefMut, rc::Rc};
 
 use thiserror::Error;
 
@@ -8,7 +8,13 @@ pub enum TreeError {
     AssessmentVectorMismatch,
 }
 
+
 pub trait FeasibleStep {
+    // todo: add_child does not make sense for leafs. What would be a better design?
+    fn add_child(&self, child: &Rc<dyn FeasibleStep>);
+
+    fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>>;
+
     fn title(&self) -> &str;
 
     fn feasibility_value(&self) -> u32 {
@@ -18,23 +24,35 @@ pub trait FeasibleStep {
             Err(_) => 0,
         }
     }
-
+    
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError>;
 }
 
 pub struct OrNode {
     pub description: String,
-    pub children: Vec<Box<dyn FeasibleStep>>,
+    pub parent: Option<Rc<dyn FeasibleStep>>,
+    pub children: RefCell<Vec<Rc<dyn FeasibleStep>>>,
+}
+
+impl OrNode {
+    pub fn new(title: &str, parent: Option<Rc<dyn FeasibleStep>>) -> OrNode {
+        OrNode {
+            description: title.to_string(),
+            parent,
+            children: RefCell::new(vec![])
+        }
+    }
 }
 
 impl FeasibleStep for OrNode {
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
-        if self.children.is_empty() {
+        if self.children.borrow().is_empty() {
             return Err(TreeError::AssessmentVectorMismatch);
         }
 
         let min_feasibility = self
             .children
+            .borrow()
             .iter()
             .map(|s| s.feasibility().unwrap())
             .min_by_key(|f| f.sum());
@@ -45,21 +63,45 @@ impl FeasibleStep for OrNode {
     fn title(&self) -> &str {
         &self.description
     }
+    
+    fn add_child(&self, child: &Rc<dyn FeasibleStep>) {
+        self.children.borrow_mut().push(child.clone());
+    }
+    
+    fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
+        if let Some(s) = &self.parent {
+            return Some(s.clone())
+        }
+
+        None
+    }
 }
 
 pub struct AndNode {
     pub description: String,
-    pub children: Vec<Box<dyn FeasibleStep>>,
+    pub parent: Option<Rc<dyn FeasibleStep>>,
+    pub children: RefCell<Vec<Rc<dyn FeasibleStep>>>,
+}
+
+impl AndNode {
+    pub fn new(title: &str, parent: Option<Rc<dyn FeasibleStep>>) -> AndNode {
+        AndNode {
+            description: title.to_string(),
+            parent,
+            children: RefCell::new(vec![])
+        }
+    }
 }
 
 impl FeasibleStep for AndNode {
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
-        if self.children.is_empty() {
+        if self.children.borrow().is_empty() {
             return Err(TreeError::AssessmentVectorMismatch);
         }
 
         let maximum_assessment = self
             .children
+            .borrow()
             .iter()
             .filter_map(|s| s.feasibility().ok())
             .reduce(|a, b| a.component_wise_max(&b).unwrap())
@@ -71,10 +113,23 @@ impl FeasibleStep for AndNode {
     fn title(&self) -> &str {
         &self.description
     }
+    
+    fn add_child(&self, child: &Rc<dyn FeasibleStep>) {
+        self.children.borrow_mut().push(child.clone());
+    }
+    
+    fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
+        if let Some(s) = &self.parent {
+            return Some(s.clone())
+        }
+
+        None
+    }
 }
 
 pub struct Leaf {
     pub description: String,
+    pub parent: Option<Rc<dyn FeasibleStep>>,
     pub criteria: FeasibilityAssessment,
 }
 
@@ -85,6 +140,18 @@ impl FeasibleStep for Leaf {
 
     fn title(&self) -> &str {
         &self.description
+    }
+
+    fn add_child(&self, _child: &Rc<dyn FeasibleStep>) {
+        panic!("Attempt to add a child to an attack tree node.");
+    }
+    
+    fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
+        if let Some(s) = &self.parent {
+            return Some(s.clone())
+        }
+
+        None
     }
 }
 
@@ -97,7 +164,7 @@ pub struct FeasibilityAssessment {
 impl FeasibilityAssessment {
     pub fn new(
         definition: &Rc<FeasibilityCriteria>,
-        assessments: &[u32],
+        assessments: &[Option<u32>],
     ) -> Result<FeasibilityAssessment, TreeError> {
         if assessments.len() != definition.0.len() {
             return Err(TreeError::AssessmentVectorMismatch);
@@ -110,7 +177,7 @@ impl FeasibilityAssessment {
     }
 
     pub fn sum(&self) -> u32 {
-        self.assessments.0.iter().sum()
+        self.assessments.0.iter().map(|v| v.unwrap_or(0)).sum()
     }
 
     pub fn component_wise_max(
@@ -121,12 +188,12 @@ impl FeasibilityAssessment {
             return Err(TreeError::AssessmentVectorMismatch);
         }
 
-        let maxima: Vec<u32> = self
+        let maxima: Vec<Option<u32>> = self
             .assessments
             .0
             .iter()
             .zip(other.assessments.0.iter())
-            .map(|(a, b)| *std::cmp::max(a, b))
+            .map(|(a, b)| Some(std::cmp::max(a.unwrap_or(0), b.unwrap_or(0))))
             .collect();
 
         FeasibilityAssessment::new(&self.definition, &maxima)
@@ -134,7 +201,7 @@ impl FeasibilityAssessment {
 }
 
 #[derive(Clone, Debug)]
-pub struct FeasibilityVector(Vec<u32>);
+pub struct FeasibilityVector(Vec<Option<u32>>);
 
 #[derive(Debug)]
 pub struct FeasibilityCriteria(pub Vec<FeasiblityCriterion>);
@@ -148,6 +215,7 @@ pub struct FeasiblityCriterion {
 #[cfg(test)]
 pub mod tests {
     use std::rc::Rc;
+    use std::cell::RefCell;
 
     use crate::model::TreeError;
 
@@ -172,29 +240,33 @@ pub mod tests {
         definition: &Rc<FeasibilityCriteria>,
         assessments: &[u32],
     ) -> FeasibilityAssessment {
-        FeasibilityAssessment::new(definition, assessments).unwrap()
+        let assessment_options: Vec<Option<u32>> = assessments.iter().map(|a| Some(*a)).collect();
+        FeasibilityAssessment::new(definition, &assessment_options).unwrap()
     }
 
     fn build_leaf(criteria: &Rc<FeasibilityCriteria>, assessment: &[u32]) -> Leaf {
-        let feasibility = build_feasibility(&criteria, &assessment);
+        let feasibility = build_feasibility(&criteria, assessment);
 
         Leaf {
             description: "Attack step".to_string(),
+            parent: None,
             criteria: feasibility,
         }
     }
 
-    fn build_and_node(children: Vec<Box<dyn FeasibleStep>>) -> Box<dyn FeasibleStep> {
-        Box::new(AndNode {
+    fn build_and_node(children: Vec<Rc<dyn FeasibleStep>>) -> Rc<dyn FeasibleStep> {
+        Rc::new(AndNode {
             description: "An and-node".to_string(),
-            children
+            parent: None,
+            children: RefCell::new(children)
         })
     }
 
-    fn build_or_node(children: Vec<Box<dyn FeasibleStep>>) -> Box<dyn FeasibleStep> {
-        Box::new(OrNode {
+    fn build_or_node(children: Vec<Rc<dyn FeasibleStep>>) -> Rc<dyn FeasibleStep> {
+        Rc::new(OrNode {
             description: "An or-node".to_string(),
-            children
+            parent: None,
+            children: RefCell::new(children)
         })
     }
 
@@ -202,7 +274,7 @@ pub mod tests {
     fn in_feasibility_assessments_the_vector_must_match_the_definition() {
         let criteria = build_criteria(&["Eq", "Kn"]);
 
-        let error_result = FeasibilityAssessment::new(&criteria, &[1, 2, 3]).unwrap_err();
+        let error_result = FeasibilityAssessment::new(&criteria, &[Some(1), Some(2), Some(3)]).unwrap_err();
         assert_eq!(error_result, TreeError::AssessmentVectorMismatch);
     }
 
@@ -222,7 +294,8 @@ pub mod tests {
     fn an_or_node_without_children_returns_an_error_for_feasibility() {
         let node = OrNode {
             description: "An or node".to_string(),
-            children: vec![],
+            parent: None,
+            children: RefCell::new(vec![]),
         };
 
         assert_eq!(
@@ -237,11 +310,12 @@ pub mod tests {
 
         let node = OrNode {
             description: "An or-node".to_string(),
-            children: vec![
-                Box::new(build_leaf(&criteria, &[0, 50])),
-                Box::new(build_leaf(&criteria, &[1, 49])),
-                Box::new(build_leaf(&criteria, &[2, 3])),
-            ],
+            parent: None,
+            children: RefCell::new(vec![
+                Rc::new(build_leaf(&criteria, &[0, 50])),
+                Rc::new(build_leaf(&criteria, &[1, 49])),
+                Rc::new(build_leaf(&criteria, &[2, 3])),
+            ]),
         };
 
         let expected_assessment = build_feasibility(&criteria, &[2, 3]);
@@ -258,11 +332,12 @@ pub mod tests {
 
         let node = OrNode {
             description: "An or-node".to_string(),
-            children: vec![
-                Box::new(build_leaf(&criteria, &[0, 50])),
-                Box::new(build_leaf(&criteria, &[1, 49])),
-                Box::new(build_leaf(&criteria, &[2, 3])),
-            ],
+            parent: None,
+            children: RefCell::new(vec![
+                Rc::new(build_leaf(&criteria, &[0, 50])),
+                Rc::new(build_leaf(&criteria, &[1, 49])),
+                Rc::new(build_leaf(&criteria, &[2, 3])),
+            ]),
         };
 
         assert_eq!(
@@ -275,7 +350,8 @@ pub mod tests {
     fn an_and_node_without_children_returns_an_error_for_feasibility() {
         let node = AndNode {
             description: "An and-node".to_string(),
-            children: vec![],
+            parent: None,
+            children: RefCell::new(vec![]),
         };
 
         assert_eq!(
@@ -288,7 +364,8 @@ pub mod tests {
     fn an_and_node_without_children_returns_0_as_feasibility_value() {
         let node = AndNode {
             description: "An and-node".to_string(),
-            children: vec![],
+            parent: None,
+            children: RefCell::new(vec![]),
         };
 
         assert_eq!(node.feasibility_value(), 0);
@@ -300,11 +377,12 @@ pub mod tests {
 
         let node = AndNode {
             description: "An and-node".to_string(),
-            children: vec![
-                Box::new(build_leaf(&criteria, &[1, 6, 8])),
-                Box::new(build_leaf(&criteria, &[2, 4, 9])),
-                Box::new(build_leaf(&criteria, &[3, 5, 7])),
-            ],
+            parent: None,
+            children: RefCell::new(vec![
+                Rc::new(build_leaf(&criteria, &[1, 6, 8])),
+                Rc::new(build_leaf(&criteria, &[2, 4, 9])),
+                Rc::new(build_leaf(&criteria, &[3, 5, 7])),
+            ]),
         };
 
         let expected_assessment = build_feasibility(&criteria, &[3, 6, 9]);
@@ -321,11 +399,12 @@ pub mod tests {
 
         let node = AndNode {
             description: "An and-node".to_string(),
-            children: vec![
-                Box::new(build_leaf(&criteria, &[1, 6, 8])),
-                Box::new(build_leaf(&criteria, &[2, 4, 9])),
-                Box::new(build_leaf(&criteria, &[3, 5, 7])),
-            ],
+            parent: None,
+            children: RefCell::new(vec![
+                Rc::new(build_leaf(&criteria, &[1, 6, 8])),
+                Rc::new(build_leaf(&criteria, &[2, 4, 9])),
+                Rc::new(build_leaf(&criteria, &[3, 5, 7])),
+            ]),
         };
 
         assert_eq!(node.feasibility_value(), 3 + 6 + 9);
@@ -349,13 +428,13 @@ pub mod tests {
         let tree = build_and_node(vec![
             // 3, 5
             build_and_node(vec![
-                Box::new(build_leaf(&criteria, &[1, 5])),
-                Box::new(build_leaf(&criteria, &[3, 1])),
+                Rc::new(build_leaf(&criteria, &[1, 5])),
+                Rc::new(build_leaf(&criteria, &[3, 1])),
             ]),
             // 2, 14
             build_or_node(vec![
-                Box::new(build_leaf(&criteria, &[2, 14])),
-                Box::new(build_leaf(&criteria, &[20, 1])),
+                Rc::new(build_leaf(&criteria, &[2, 14])),
+                Rc::new(build_leaf(&criteria, &[20, 1])),
             ])
         ]);
 

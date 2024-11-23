@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::BufRead, rc::Rc};
+use std::{borrow::Borrow, collections::HashMap, io::BufRead, rc::Rc};
 
 use crate::model::*;
 
@@ -12,93 +12,190 @@ pub enum TreeFileError {
     SyntaxError(u32),
 }
 
-pub enum ParserState {
+enum ParserState {
+    DeterminingIndentationLevel,
     InTitle,
+    DeterminingNodeType,
     InAssessmentName,
-    InAssessmentValue
+    InAssessmentValue,
+    SkipToLineEnd,
 }
 
-struct AttackTreeParser {
+enum NodeType {
+    Unknown,
+    AndNode,
+    OrNode,
+    Leaf,
+}
+
+pub struct AttackTreeParser {
     state: ParserState,
     title: String,
     assessment_value: String,
     assessment_title: String,
-    assessments: HashMap<String, u32>
+    parsed_assessments: HashMap<String, u32>,
+    current_node_type: NodeType,
+    indentation_counter: u32,
+    previous_indentation: u32,
+    current_indentation: u32,
+    current_node: Option<Rc<dyn FeasibleStep>>,
 }
 
 impl AttackTreeParser {
     pub fn new() -> AttackTreeParser {
         AttackTreeParser {
-            state: ParserState::InTitle,
+            state: ParserState::DeterminingIndentationLevel,
             title: String::new(),
             assessment_value: String::new(),
             assessment_title: String::new(),
-            assessments: HashMap::new()
+            parsed_assessments: HashMap::new(),
+            current_node_type: NodeType::Unknown,
+            indentation_counter: 0,
+            previous_indentation: 0,
+            current_indentation: 0,
+            current_node: None,
         }
     }
 
-    pub fn parse(&mut self, buf_read: &mut dyn BufRead, definition: &Rc<FeasibilityCriteria>) -> Result<Box<dyn FeasibleStep>, TreeFileError> {
+    pub fn parse(
+        &mut self,
+        buf_read: &mut dyn BufRead,
+        definition: &Rc<FeasibilityCriteria>,
+    ) -> Result<Rc<dyn FeasibleStep>, TreeFileError> {
         let mut text = String::new();
         if buf_read.read_to_string(&mut text).is_err() {
             return Err(TreeFileError::FileReadError);
         }
-        
+
         for c in text.chars() {
             match self.state {
                 ParserState::InTitle => {
                     if c == ';' {
-                        self.state = ParserState::InAssessmentName;
-                        self.assessment_value.clear();
-                        self.assessment_title.clear();
-                    }
-                    else {
+                        self.state = ParserState::DeterminingNodeType;
+                    } else {
                         self.title.push(c);
                     }
-                },
+                }
+                ParserState::DeterminingNodeType => {
+                    if c == '&' {
+                        self.current_node_type = NodeType::AndNode;
+                        self.add_node(Rc::new(AndNode::new(
+                            &self.title,
+                            self.current_node.clone(),
+                        )));
+                        self.state = ParserState::SkipToLineEnd;
+                    } else if c != ' ' {
+                        self.current_node_type = NodeType::Leaf;
+                        self.assessment_value.clear();
+                        self.assessment_title.clear();
+                        self.assessment_title.push(c);
+                        self.state = ParserState::InAssessmentName;
+                    }
+                }
+                ParserState::SkipToLineEnd => {
+                    if c == '\n' {
+                        self.state = ParserState::DeterminingIndentationLevel;
+                        self.indentation_counter = 0;
+                    }
+                }
+                ParserState::DeterminingIndentationLevel => {
+                    if c == ' ' {
+                        self.indentation_counter += 1;
+                    } else if c == '\n' {
+                        self.state = ParserState::DeterminingIndentationLevel;
+                        self.indentation_counter = 0;
+                    } else {
+                        // todo: make parent of current node to parent, if indentation decreased
+                        self.previous_indentation = self.current_indentation;
+                        self.current_indentation = self.indentation_counter;
+                        self.title.clear();
+                        self.title.push(c);
+                        self.state = ParserState::InTitle;
+                    }
+                }
                 ParserState::InAssessmentName => {
                     if c == '=' {
                         self.state = ParserState::InAssessmentValue;
-                    }
-                    else {
+                    } else {
                         self.assessment_title.push(c);
                     }
-                },
+                }
                 ParserState::InAssessmentValue => {
                     if c == ',' {
                         self.commit_assessment()?;
                         self.state = ParserState::InAssessmentName;
-                    }
-                    else {
+                    } else if c == '\n' {
+                        self.commit_assessment()?;
+                        self.add_node(self.build_leaf(&definition));
+                        self.state = ParserState::DeterminingIndentationLevel;
+                        self.indentation_counter = 0;
+                    } else {
                         self.assessment_value.push(c);
                     }
                 }
             }
         }
-    
+
         // handle leafs at end of file
         if let ParserState::InAssessmentValue = self.state {
             self.commit_assessment()?;
+            self.add_node(self.build_leaf(&definition));
         }
-    
-        let assessment_values: Vec<u32> = definition.0.iter()
+
+        // set self.current_node to the tree's root node
+        loop {
+            if let Some(n) = &self.current_node {
+                if let Some(parent) = n.get_parent() {
+                    self.current_node.replace(parent.clone());
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(self.current_node.as_ref().unwrap().clone())
+    }
+
+    fn add_node(&mut self, node: Rc<dyn FeasibleStep>) {
+        if self.current_node.is_none() {
+            self.current_node = Some(node.clone());
+        } else {
+            let t = self.current_node.as_ref();
+            t.unwrap().add_child(&node);
+        }
+    }
+
+    fn build_leaf(&self, definition: &Rc<FeasibilityCriteria>) -> Rc<dyn FeasibleStep> {
+        let assessment_values: Vec<Option<u32>> = definition
+            .0
+            .iter()
             .map(|c| &c.name)
-            .filter_map(|n| self.assessments.get(n))
-            .map(|v| *v)
+            .map(|n| self.parsed_assessments.get(n))
+            .map(|v| match v {
+                Some(v) => Some(*v),
+                None => None,
+            })
             .collect();
-        
-        Ok(Box::new(Leaf {
+
+        Rc::new(Leaf {
             description: self.title.clone(),
-            criteria: FeasibilityAssessment::new(&definition, &assessment_values).unwrap()
-        }))
+            parent: self.current_node.clone(),
+            criteria: FeasibilityAssessment::new(&definition, &assessment_values).unwrap(),
+        })
     }
 
     fn commit_assessment(&mut self) -> Result<(), TreeFileError> {
         let value: u32 = match self.assessment_value.parse() {
             Ok(v) => v,
-            Err(_) => { return Err(TreeFileError::SyntaxError(1)); }
+            Err(_) => {
+                return Err(TreeFileError::SyntaxError(1));
+            }
         };
 
-        self.assessments.insert(self.assessment_title.trim().to_string(), value);
+        self.parsed_assessments
+            .insert(self.assessment_title.trim().to_string(), value);
         self.assessment_value.clear();
         self.assessment_title.clear();
 
@@ -106,44 +203,58 @@ impl AttackTreeParser {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use crate::model::tests::*;
     use super::*;
+    use crate::model::tests::*;
+    use std::io;
 
-// file read error
-// missing semicolon
-// Wrong category
-// no =
+    // Unknown category
 
-#[test]
-fn read_a_file_with_one_leaf() {
-    let definition = build_criteria(&["Eq", "Kn"]);
+    #[test]
+    fn read_a_file_with_one_leaf() {
+        let definition = build_criteria(&["Eq", "Kn"]);
 
-    let mut file_stub = io::Cursor::new(r#"Break into house;  Kn=5, Eq=3"#);
+        let mut file_stub = io::Cursor::new(r#"Break into house;  Kn=5, Eq=3"#);
 
-    let mut parser = AttackTreeParser::new();
+        let mut parser = AttackTreeParser::new();
 
-    let result = parser.parse(&mut file_stub, &definition).unwrap();
+        let result = parser.parse(&mut file_stub, &definition).unwrap();
 
-    assert_eq!(result.feasibility_value(), 3 + 5);
-    assert_eq!(result.title(), "Break into house")
-}
+        assert_eq!(result.feasibility_value(), 3 + 5);
+        assert_eq!(result.title(), "Break into house")
+    }
 
-#[test]
-fn errors_in_assessment_value_formats_are_handled() {
-    let definition = build_criteria(&["Eq", "Kn"]);
+    #[test]
+    fn errors_in_assessment_value_formats_are_handled() {
+        let definition = build_criteria(&["Eq", "Kn"]);
 
-    // assessments should be integers
-    let mut file_stub = io::Cursor::new(r#"Break into house;  Kn=5.1, Eq=3"#);
+        // assessments should be integers
+        let mut file_stub = io::Cursor::new(r#"Break into house;  Kn=5.1, Eq=3"#);
 
-    let mut parser = AttackTreeParser::new();
+        let mut parser = AttackTreeParser::new();
 
-    let result = parser.parse(&mut file_stub, &definition);
+        let result = parser.parse(&mut file_stub, &definition);
 
-    assert_eq!(result.err(), Some(TreeFileError::SyntaxError(1)))
-}
+        assert_eq!(result.err(), Some(TreeFileError::SyntaxError(1)))
+    }
 
+    #[test]
+    fn an_and_node_with_two_leafs_can_be_parsed() {
+        let definition = build_criteria(&["Eq", "Kn"]);
+
+        let mut file_stub = io::Cursor::new(
+            r#"
+Break into house;&
+    Observe when people are away; Kn=6, Eq=1
+    Pick lock; Kn=5, Eq=3"#,
+        );
+
+        let mut parser = AttackTreeParser::new();
+
+        let result = parser.parse(&mut file_stub, &definition).unwrap();
+
+        assert_eq!(result.title(), "Break into house");
+        assert_eq!(result.feasibility_value(), 6 + 3);
+    }
 }
