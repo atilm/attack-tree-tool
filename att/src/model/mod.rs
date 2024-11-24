@@ -1,6 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize, sync::atomic::Ordering};
 
 use thiserror::Error;
+
+static OBJECT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+pub fn generate_id() -> u32 {
+    OBJECT_COUNTER.fetch_add(1, Ordering::SeqCst) as u32
+}
 
 #[derive(Error, Debug, PartialEq)]
 pub enum TreeError {
@@ -9,6 +15,7 @@ pub enum TreeError {
 }
 
 pub trait FeasibleStep {
+    fn id(&self) -> u32;
     // todo: add_child does not make sense for leafs. What would be a better design?
     fn add_child(&self, child: &Rc<dyn FeasibleStep>);
 
@@ -25,17 +32,26 @@ pub trait FeasibleStep {
     }
 
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError>;
+
+    fn render(&self) -> String;
+
+    fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>>;
 }
 
 pub struct OrNode {
+    pub id: u32,
     pub description: String,
     pub parent: Option<Rc<dyn FeasibleStep>>,
     pub children: RefCell<Vec<Rc<dyn FeasibleStep>>>,
 }
 
 impl OrNode {
-    pub fn new(title: &str, parent: Option<Rc<dyn FeasibleStep>>) -> OrNode {
+    pub fn new<F>(title: &str, parent: Option<Rc<dyn FeasibleStep>>, id_gen: F) -> OrNode
+    where
+        F: Fn() -> u32,
+    {
         OrNode {
+            id: id_gen(),
             description: title.to_string(),
             parent,
             children: RefCell::new(vec![]),
@@ -44,6 +60,10 @@ impl OrNode {
 }
 
 impl FeasibleStep for OrNode {
+    fn id(&self) -> u32 {
+        self.id
+    }
+
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
         if self.children.borrow().is_empty() {
             return Err(TreeError::AssessmentVectorMismatch);
@@ -74,17 +94,36 @@ impl FeasibleStep for OrNode {
 
         None
     }
+
+    fn render(&self) -> String {
+        format!(r#"label="{}" shape=invtrapezium"#, self.description)
+    }
+
+    fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
+        let mut v = Vec::new();
+
+        for c in self.children.borrow().iter() {
+            v.push(c.clone())
+        }
+
+        v
+    }
 }
 
 pub struct AndNode {
+    pub id: u32,
     pub description: String,
     pub parent: Option<Rc<dyn FeasibleStep>>,
     pub children: RefCell<Vec<Rc<dyn FeasibleStep>>>,
 }
 
 impl AndNode {
-    pub fn new(title: &str, parent: Option<Rc<dyn FeasibleStep>>) -> AndNode {
+    pub fn new<F>(title: &str, parent: Option<Rc<dyn FeasibleStep>>, id_gen: F) -> AndNode
+    where
+        F: Fn() -> u32,
+    {
         AndNode {
+            id: id_gen(),
             description: title.to_string(),
             parent,
             children: RefCell::new(vec![]),
@@ -93,6 +132,10 @@ impl AndNode {
 }
 
 impl FeasibleStep for AndNode {
+    fn id(&self) -> u32 {
+        self.id
+    }
+
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
         if self.children.borrow().is_empty() {
             return Err(TreeError::AssessmentVectorMismatch);
@@ -124,15 +167,56 @@ impl FeasibleStep for AndNode {
 
         None
     }
+
+    fn render(&self) -> String {
+        format!(r#"label="{}" shape=trapezium"#, self.description)
+    }
+
+    fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
+        let mut v = Vec::new();
+
+        for c in self.children.borrow().iter() {
+            v.push(c.clone())
+        }
+
+        v
+    }
 }
 
 pub struct Leaf {
+    pub id: u32,
     pub description: String,
     pub parent: Option<Rc<dyn FeasibleStep>>,
     pub criteria: FeasibilityAssessment,
 }
 
+impl Leaf {
+    pub fn new<F>(
+        description: &str,
+        parent: Option<Rc<dyn FeasibleStep>>,
+        definition: &Rc<FeasibilityCriteria>,
+        assessment: &[u32],
+        id_gen: F,
+    ) -> Leaf
+    where
+        F: Fn() -> u32,
+    {
+        let assessments: Vec<Option<u32>> = assessment.iter().map(|v| Some(*v)).collect();
+
+        Leaf {
+            id: id_gen(),
+            description: description.to_string(),
+            parent,
+            criteria: FeasibilityAssessment::new(definition, &assessments).unwrap(),
+        }
+    }
+}
+
 impl FeasibleStep for Leaf {
+    fn id(&self) -> u32 {
+        self.id
+    }
+
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
         FeasibilityAssessment::new(&self.criteria.definition, &self.criteria.assessments.0)
     }
@@ -151,6 +235,27 @@ impl FeasibleStep for Leaf {
         }
 
         None
+    }
+
+    fn render(&self) -> String {
+        let assessment_strings: Vec<String> = self
+            .criteria
+            .definition
+            .0
+            .iter()
+            .zip(&self.criteria.assessments.0)
+            .map(|(c, v)| format!("{}={}", c.name, v.unwrap_or(0)))
+            .collect();
+
+        format!(
+            r#"label="{}\n{}""#,
+            self.description,
+            assessment_strings.join(", ")
+        )
+    }
+
+    fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
+        Vec::new()
     }
 }
 
@@ -219,8 +324,7 @@ pub mod tests {
     use crate::model::TreeError;
 
     use super::{
-        AndNode, FeasibilityAssessment, FeasibilityCriteria, FeasibleStep, FeasiblityCriterion,
-        Leaf, OrNode,
+        generate_id, AndNode, FeasibilityAssessment, FeasibilityCriteria, FeasibleStep, FeasiblityCriterion, Leaf, OrNode
     };
 
     pub fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
@@ -247,6 +351,7 @@ pub mod tests {
         let feasibility = build_feasibility(&criteria, assessment);
 
         Leaf {
+            id: generate_id(),
             description: "Attack step".to_string(),
             parent: None,
             criteria: feasibility,
@@ -255,6 +360,7 @@ pub mod tests {
 
     fn build_and_node(children: Vec<Rc<dyn FeasibleStep>>) -> Rc<dyn FeasibleStep> {
         Rc::new(AndNode {
+            id: generate_id(),
             description: "An and-node".to_string(),
             parent: None,
             children: RefCell::new(children),
@@ -263,6 +369,7 @@ pub mod tests {
 
     fn build_or_node(children: Vec<Rc<dyn FeasibleStep>>) -> Rc<dyn FeasibleStep> {
         Rc::new(OrNode {
+            id: generate_id(),
             description: "An or-node".to_string(),
             parent: None,
             children: RefCell::new(children),
@@ -293,6 +400,7 @@ pub mod tests {
     #[test]
     fn an_or_node_without_children_returns_an_error_for_feasibility() {
         let node = OrNode {
+            id: generate_id(),
             description: "An or node".to_string(),
             parent: None,
             children: RefCell::new(vec![]),
@@ -309,6 +417,7 @@ pub mod tests {
         let criteria = build_criteria(&["Eq", "Kn"]);
 
         let node = OrNode {
+            id: generate_id(),
             description: "An or-node".to_string(),
             parent: None,
             children: RefCell::new(vec![
@@ -331,6 +440,7 @@ pub mod tests {
         let criteria = build_criteria(&["Eq", "Kn"]);
 
         let node = OrNode {
+            id: generate_id(),
             description: "An or-node".to_string(),
             parent: None,
             children: RefCell::new(vec![
@@ -346,6 +456,7 @@ pub mod tests {
     #[test]
     fn an_and_node_without_children_returns_an_error_for_feasibility() {
         let node = AndNode {
+            id: generate_id(),
             description: "An and-node".to_string(),
             parent: None,
             children: RefCell::new(vec![]),
@@ -360,6 +471,7 @@ pub mod tests {
     #[test]
     fn an_and_node_without_children_returns_0_as_feasibility_value() {
         let node = AndNode {
+            id: generate_id(),
             description: "An and-node".to_string(),
             parent: None,
             children: RefCell::new(vec![]),
@@ -373,6 +485,7 @@ pub mod tests {
         let criteria = build_criteria(&["Eq", "Kn", "WO"]);
 
         let node = AndNode {
+            id: generate_id(),
             description: "An and-node".to_string(),
             parent: None,
             children: RefCell::new(vec![
@@ -395,6 +508,7 @@ pub mod tests {
         let criteria = build_criteria(&["Eq", "Kn", "WO"]);
 
         let node = AndNode {
+            id: generate_id(),
             description: "An and-node".to_string(),
             parent: None,
             children: RefCell::new(vec![

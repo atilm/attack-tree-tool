@@ -84,12 +84,13 @@ impl AttackTreeParser {
                         self.add_node(Rc::new(AndNode::new(
                             &self.title,
                             self.current_node.clone(),
+                            generate_id
                         )));
                         self.state = ParserState::SkipToLineEnd;
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
                         self.current_node_type = NodeType::OrNode;
-                        self.add_node(Rc::new(OrNode::new(&self.title, self.current_node.clone())));
+                        self.add_node(Rc::new(OrNode::new(&self.title, self.current_node.clone(), generate_id)));
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c != ' ' {
                         self.current_node_type = NodeType::Leaf;
@@ -144,6 +145,7 @@ impl AttackTreeParser {
         }
 
         // set self.current_node to the tree's root node
+        // ToDo: just safe the root node in an extra variable
         loop {
             if let Some(n) = &self.current_node {
                 if let Some(parent) = n.get_parent() {
@@ -212,6 +214,7 @@ impl AttackTreeParser {
             .collect();
 
         Rc::new(Leaf {
+            id: generate_id(),
             description: self.title.clone(),
             parent: self.current_node.clone(),
             criteria: FeasibilityAssessment::new(&definition, &assessment_values).unwrap(),
