@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, cell::{Cell, RefCell}, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use thiserror::Error;
 
@@ -7,7 +7,6 @@ pub enum TreeError {
     #[error("Length mismatch between assessment vector and definition")]
     AssessmentVectorMismatch,
 }
-
 
 pub trait FeasibleStep {
     // todo: add_child does not make sense for leafs. What would be a better design?
@@ -24,7 +23,7 @@ pub trait FeasibleStep {
             Err(_) => 0,
         }
     }
-    
+
     fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError>;
 }
 
@@ -39,7 +38,7 @@ impl OrNode {
         OrNode {
             description: title.to_string(),
             parent,
-            children: RefCell::new(vec![])
+            children: RefCell::new(vec![]),
         }
     }
 }
@@ -59,18 +58,18 @@ impl FeasibleStep for OrNode {
 
         Ok(min_feasibility.unwrap())
     }
-    
+
     fn title(&self) -> &str {
         &self.description
     }
-    
+
     fn add_child(&self, child: &Rc<dyn FeasibleStep>) {
         self.children.borrow_mut().push(child.clone());
     }
-    
+
     fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
         if let Some(s) = &self.parent {
-            return Some(s.clone())
+            return Some(s.clone());
         }
 
         None
@@ -88,7 +87,7 @@ impl AndNode {
         AndNode {
             description: title.to_string(),
             parent,
-            children: RefCell::new(vec![])
+            children: RefCell::new(vec![]),
         }
     }
 }
@@ -109,18 +108,18 @@ impl FeasibleStep for AndNode {
 
         Ok(maximum_assessment)
     }
-    
+
     fn title(&self) -> &str {
         &self.description
     }
-    
+
     fn add_child(&self, child: &Rc<dyn FeasibleStep>) {
         self.children.borrow_mut().push(child.clone());
     }
-    
+
     fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
         if let Some(s) = &self.parent {
-            return Some(s.clone())
+            return Some(s.clone());
         }
 
         None
@@ -145,10 +144,10 @@ impl FeasibleStep for Leaf {
     fn add_child(&self, _child: &Rc<dyn FeasibleStep>) {
         panic!("Attempt to add a child to an attack tree leaf.");
     }
-    
+
     fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
         if let Some(s) = &self.parent {
-            return Some(s.clone())
+            return Some(s.clone());
         }
 
         None
@@ -214,8 +213,8 @@ pub struct FeasiblityCriterion {
 
 #[cfg(test)]
 pub mod tests {
-    use std::rc::Rc;
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     use crate::model::TreeError;
 
@@ -258,7 +257,7 @@ pub mod tests {
         Rc::new(AndNode {
             description: "An and-node".to_string(),
             parent: None,
-            children: RefCell::new(children)
+            children: RefCell::new(children),
         })
     }
 
@@ -266,7 +265,7 @@ pub mod tests {
         Rc::new(OrNode {
             description: "An or-node".to_string(),
             parent: None,
-            children: RefCell::new(children)
+            children: RefCell::new(children),
         })
     }
 
@@ -274,7 +273,8 @@ pub mod tests {
     fn in_feasibility_assessments_the_vector_must_match_the_definition() {
         let criteria = build_criteria(&["Eq", "Kn"]);
 
-        let error_result = FeasibilityAssessment::new(&criteria, &[Some(1), Some(2), Some(3)]).unwrap_err();
+        let error_result =
+            FeasibilityAssessment::new(&criteria, &[Some(1), Some(2), Some(3)]).unwrap_err();
         assert_eq!(error_result, TreeError::AssessmentVectorMismatch);
     }
 
@@ -340,10 +340,7 @@ pub mod tests {
             ]),
         };
 
-        assert_eq!(
-            node.feasibility_value(),
-            2 + 3
-        );
+        assert_eq!(node.feasibility_value(), 2 + 3);
     }
 
     #[test]
@@ -435,7 +432,7 @@ pub mod tests {
             build_or_node(vec![
                 Rc::new(build_leaf(&criteria, &[2, 14])),
                 Rc::new(build_leaf(&criteria, &[20, 1])),
-            ])
+            ]),
         ]);
 
         let assessment = tree.feasibility().unwrap();

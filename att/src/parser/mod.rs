@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::HashMap, io::BufRead, rc::Rc};
+use std::{collections::HashMap, io::BufRead, rc::Rc};
 
 use crate::model::*;
 
@@ -55,7 +55,7 @@ impl AttackTreeParser {
             previous_indentation: 0,
             current_indentation: 0,
             current_node: None,
-            last_added_node: None
+            last_added_node: None,
         }
     }
 
@@ -73,7 +73,7 @@ impl AttackTreeParser {
             match self.state {
                 ParserState::InTitle => {
                     if c == ';' {
-                        self.state = ParserState::DeterminingNodeType;
+                        self.set_state(ParserState::DeterminingNodeType);
                     } else {
                         self.title.push(c);
                     }
@@ -86,47 +86,38 @@ impl AttackTreeParser {
                             self.current_node.clone(),
                         )));
                         self.state = ParserState::SkipToLineEnd;
+                        self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
                         self.current_node_type = NodeType::OrNode;
-                        self.add_node(Rc::new(OrNode::new(
-                            &self.title,
-                            self.current_node.clone(),
-                        )));
-                        self.state = ParserState::SkipToLineEnd;
-                    }
-                    else if c != ' ' {
+                        self.add_node(Rc::new(OrNode::new(&self.title, self.current_node.clone())));
+                        self.set_state(ParserState::SkipToLineEnd);
+                    } else if c != ' ' {
                         self.current_node_type = NodeType::Leaf;
-                        self.assessment_value.clear();
-                        self.assessment_title.clear();
+                        self.set_state(ParserState::InAssessmentName);
                         self.assessment_title.push(c);
-                        self.state = ParserState::InAssessmentName;
                     }
                 }
                 ParserState::SkipToLineEnd => {
                     if c == '\n' {
-                        self.state = ParserState::DeterminingIndentationLevel;
-                        self.indentation_counter = 0;
+                        self.set_state(ParserState::DeterminingIndentationLevel);
                     }
                 }
                 ParserState::DeterminingIndentationLevel => {
                     if c == ' ' {
                         self.indentation_counter += 1;
                     } else if c == '\n' {
-                        self.state = ParserState::DeterminingIndentationLevel;
-                        self.indentation_counter = 0;
+                        self.set_state(ParserState::DeterminingIndentationLevel);
                     } else {
-                        // todo: make parent of current node to parent, if indentation decreased
                         self.previous_indentation = self.current_indentation;
                         self.current_indentation = self.indentation_counter;
 
-                        self.state = ParserState::InTitle;
-                        self.title.clear();
+                        self.set_state(ParserState::InTitle);
                         self.title.push(c);
                     }
                 }
                 ParserState::InAssessmentName => {
                     if c == '=' {
-                        self.state = ParserState::InAssessmentValue;
+                        self.set_state(ParserState::InAssessmentValue);
                     } else {
                         self.assessment_title.push(c);
                     }
@@ -134,12 +125,11 @@ impl AttackTreeParser {
                 ParserState::InAssessmentValue => {
                     if c == ',' {
                         self.commit_assessment()?;
-                        self.state = ParserState::InAssessmentName;
+                        self.set_state(ParserState::InAssessmentName);
                     } else if c == '\n' {
                         self.commit_assessment()?;
                         self.add_node(self.build_leaf(&definition));
-                        self.state = ParserState::DeterminingIndentationLevel;
-                        self.indentation_counter = 0;
+                        self.set_state(ParserState::DeterminingIndentationLevel);
                     } else {
                         self.assessment_value.push(c);
                     }
@@ -169,16 +159,39 @@ impl AttackTreeParser {
         Ok(self.current_node.as_ref().unwrap().clone())
     }
 
+    fn set_state(&mut self, state: ParserState) {
+        self.state = state;
+
+        match self.state {
+            ParserState::DeterminingIndentationLevel => {
+                self.indentation_counter = 0;
+            }
+            ParserState::InTitle => {
+                self.title.clear();
+            }
+            ParserState::DeterminingNodeType => {}
+            ParserState::InAssessmentName => {
+                self.assessment_title.clear();
+            }
+            ParserState::InAssessmentValue => {
+                self.assessment_value.clear();
+            }
+            ParserState::SkipToLineEnd => {}
+        }
+    }
+
     fn add_node(&mut self, node: Rc<dyn FeasibleStep>) {
         if self.current_node.is_none() {
             self.current_node = Some(node.clone());
             self.last_added_node = Some(node.clone());
         } else {
             if self.current_indentation > self.previous_indentation {
-                self.current_node.replace(self.last_added_node.as_ref().unwrap().clone());
+                self.current_node
+                    .replace(self.last_added_node.as_ref().unwrap().clone());
             }
             if self.current_indentation < self.previous_indentation {
-                self.current_node.replace(self.current_node.as_ref().unwrap().get_parent().unwrap());
+                self.current_node
+                    .replace(self.current_node.as_ref().unwrap().get_parent().unwrap());
             }
 
             self.current_node.as_ref().unwrap().add_child(&node);
