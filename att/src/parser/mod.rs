@@ -81,6 +81,10 @@ impl AttackTreeParser {
                 ParserState::DeterminingNodeType => {
                     if c == '&' {
                         self.current_node_type = NodeType::AndNode;
+
+                        // ToDo: call of update_current_node() and add_node() is repeated
+                        // several times. Make this one call again.
+                        self.update_current_node();
                         self.add_node(Rc::new(AndNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -90,6 +94,7 @@ impl AttackTreeParser {
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
                         self.current_node_type = NodeType::OrNode;
+                        self.update_current_node();
                         self.add_node(Rc::new(OrNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -133,6 +138,7 @@ impl AttackTreeParser {
                         self.set_state(ParserState::InAssessmentName);
                     } else if c == '\n' {
                         self.commit_assessment()?;
+                        self.update_current_node();
                         self.add_node(self.build_leaf(&definition));
                         self.set_state(ParserState::DeterminingIndentationLevel);
                     } else {
@@ -145,6 +151,7 @@ impl AttackTreeParser {
         // handle leafs at end of file
         if let ParserState::InAssessmentValue = self.state {
             self.commit_assessment()?;
+            self.update_current_node();
             self.add_node(self.build_leaf(&definition));
         }
 
@@ -186,23 +193,29 @@ impl AttackTreeParser {
         }
     }
 
+    fn update_current_node(&mut self) {
+        if self.current_node.is_none() {
+            return;
+        }
+
+        if self.current_indentation > self.previous_indentation {
+            self.current_node
+                .replace(self.last_added_node.as_ref().unwrap().clone());
+        }
+        if self.current_indentation < self.previous_indentation {
+            self.current_node
+                .replace(self.current_node.as_ref().unwrap().get_parent().unwrap());
+        }
+    }
+
     fn add_node(&mut self, node: Rc<dyn FeasibleStep>) {
         if self.current_node.is_none() {
             self.current_node = Some(node.clone());
-            self.last_added_node = Some(node.clone());
         } else {
-            if self.current_indentation > self.previous_indentation {
-                self.current_node
-                    .replace(self.last_added_node.as_ref().unwrap().clone());
-            }
-            if self.current_indentation < self.previous_indentation {
-                self.current_node
-                    .replace(self.current_node.as_ref().unwrap().get_parent().unwrap());
-            }
-
             self.current_node.as_ref().unwrap().add_child(&node);
-            self.last_added_node.replace(node.clone());
         }
+
+        self.last_added_node.replace(node.clone());
     }
 
     fn build_leaf(&self, definition: &Rc<FeasibilityCriteria>) -> Rc<dyn FeasibleStep> {
