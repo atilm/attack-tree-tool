@@ -313,7 +313,7 @@ pub struct FeasibilityCriteria(pub Vec<FeasiblityCriterion>);
 #[derive(Debug)]
 pub struct FeasiblityCriterion {
     pub name: String,
-    _id: String,
+    pub _id: String,
 }
 
 #[cfg(test)]

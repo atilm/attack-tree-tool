@@ -84,13 +84,17 @@ impl AttackTreeParser {
                         self.add_node(Rc::new(AndNode::new(
                             &self.title,
                             self.current_node.clone(),
-                            generate_id
+                            generate_id,
                         )));
                         self.state = ParserState::SkipToLineEnd;
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
                         self.current_node_type = NodeType::OrNode;
-                        self.add_node(Rc::new(OrNode::new(&self.title, self.current_node.clone(), generate_id)));
+                        self.add_node(Rc::new(OrNode::new(
+                            &self.title,
+                            self.current_node.clone(),
+                            generate_id,
+                        )));
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c != ' ' {
                         self.current_node_type = NodeType::Leaf;
@@ -332,6 +336,11 @@ Enter house;&
         let result = parser.parse(&mut file_stub, &definition).unwrap();
 
         assert_eq!(result.title(), "Enter house");
+        let children = result.get_children();
+        for c in children {
+            assert_eq!(c.get_parent().unwrap().id(), result.id());
+        }
+
         assert_eq!(result.feasibility_value(), 4 + 3);
     }
 }
