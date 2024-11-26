@@ -28,10 +28,8 @@ pub fn render_to_png(root_node: &Rc<dyn FeasibleStep>, file_path: &str) -> std::
 }
 
 fn render_to_dot_string(root_node: &Rc<dyn FeasibleStep>) -> Result<String, RenderError> {
-    // ToDo: flatten the whole tree 
     let mut flat_nodes_list: Vec<Rc<dyn FeasibleStep>> = Vec::new();
-    flat_nodes_list.push(root_node.clone());
-    flat_nodes_list.append(&mut root_node.get_children());
+    flatten(root_node, &mut flat_nodes_list);
 
     let mut labels_texts: Vec<String> = Vec::new();
     let mut edges_texts: Vec<String> = Vec::new();
@@ -59,6 +57,14 @@ node [shape=box]
     );
 
     Ok(dot_content.to_string())
+}
+
+fn flatten(node: &Rc<dyn FeasibleStep>, result: &mut Vec<Rc<dyn FeasibleStep>>) {
+    result.push(node.clone());
+    
+    for c in node.get_children() {
+        flatten(&c, result);
+    }
 }
 
 #[cfg(test)]
@@ -152,6 +158,72 @@ node [shape=box]
 
     #[test]
     fn a_multi_level_tree_can_be_rendered() {
-        todo!()
+        let definition = build_criteria(&["Kn", "Eq"]);
+
+        let tree: Rc<dyn FeasibleStep> = Rc::new(AndNode::new("Root", None, || 1));
+
+        let first_subtree: Rc<dyn FeasibleStep> =
+            Rc::new(AndNode::new("First Sub", Some(tree.clone()), || 2));
+        tree.add_child(&first_subtree);
+        let leaf1: Rc<dyn FeasibleStep> = Rc::new(Leaf::new(
+            "Leaf 1",
+            Some(first_subtree.clone()),
+            &definition,
+            &[1, 5],
+            || 3,
+        ));
+        let leaf2: Rc<dyn FeasibleStep> = Rc::new(Leaf::new(
+            "Leaf 2",
+            Some(first_subtree.clone()),
+            &definition,
+            &[3, 1],
+            || 4,
+        ));
+        first_subtree.add_child(&leaf1);
+        first_subtree.add_child(&leaf2);
+
+        let second_subtree: Rc<dyn FeasibleStep> =
+            Rc::new(OrNode::new("Second Sub", Some(tree.clone()), || 5));
+        tree.add_child(&second_subtree);
+        let leaf3: Rc<dyn FeasibleStep> = Rc::new(Leaf::new(
+            "Leaf 3",
+            Some(second_subtree.clone()),
+            &definition,
+            &[2, 14],
+            || 6,
+        ));
+        let leaf4: Rc<dyn FeasibleStep> = Rc::new(Leaf::new(
+            "Leaf 4",
+            Some(second_subtree.clone()),
+            &definition,
+            &[20, 1],
+            || 7,
+        ));
+        second_subtree.add_child(&leaf3);
+        second_subtree.add_child(&leaf4);
+
+        let result = render_to_dot_string(&tree).unwrap();
+
+        let expected = r#"digraph G {
+
+node [shape=box]
+
+1 [label="Root" shape=trapezium]
+2 [label="First Sub" shape=trapezium]
+3 [label="Leaf 1\nKn=1, Eq=5"]
+4 [label="Leaf 2\nKn=3, Eq=1"]
+5 [label="Second Sub" shape=invtrapezium]
+6 [label="Leaf 3\nKn=2, Eq=14"]
+7 [label="Leaf 4\nKn=20, Eq=1"]
+
+1 -> 2;
+2 -> 3;
+2 -> 4;
+1 -> 5;
+5 -> 6;
+5 -> 7;
+
+}"#;
+        assert_eq!(result, expected);
     }
 }
