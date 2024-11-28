@@ -28,12 +28,12 @@ fn main() -> io::Result<()> {
         // ToDo: deserialize this from file
         let definition: Rc<FeasibilityCriteria> = Rc::new(FeasibilityCriteria(vec![
             FeasiblityCriterion {
-                name: "Kn".to_string(),
-                _id: "1".to_string(),
+                name: "Knowledge".to_string(),
+                id: "Kn".to_string(),
             },
             FeasiblityCriterion {
-                name: "Eq".to_string(),
-                _id: "1".to_string(),
+                name: "Equipment".to_string(),
+                id: "Eq".to_string(),
             },
             ]));
             

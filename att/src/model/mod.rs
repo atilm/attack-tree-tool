@@ -244,7 +244,7 @@ impl FeasibleStep for Leaf {
             .0
             .iter()
             .zip(&self.criteria.assessments.0)
-            .map(|(c, v)| format!("{}={}", c.name, v.unwrap_or(0)))
+            .map(|(c, v)| format!("{}={}", c.id, v.unwrap_or(0)))
             .collect();
 
         format!(
@@ -313,7 +313,7 @@ pub struct FeasibilityCriteria(pub Vec<FeasiblityCriterion>);
 #[derive(Debug)]
 pub struct FeasiblityCriterion {
     pub name: String,
-    pub _id: String,
+    pub id: String,
 }
 
 #[cfg(test)]
@@ -333,7 +333,7 @@ pub mod tests {
                 .iter()
                 .map(|n| FeasiblityCriterion {
                     name: n.to_string(),
-                    _id: n.to_string(),
+                    id: n.to_string(),
                 })
                 .collect(),
         ))

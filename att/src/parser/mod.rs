@@ -204,7 +204,7 @@ impl AttackTreeParser {
         let assessment_values: Vec<Option<u32>> = definition
             .0
             .iter()
-            .map(|c| &c.name)
+            .map(|c| &c.id)
             .map(|n| self.parsed_assessments.get(n))
             .map(|v| match v {
                 Some(v) => Some(*v),
