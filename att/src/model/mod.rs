@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize, sync::atomic::Ordering};
 
+use serde::Deserialize;
 use thiserror::Error;
 
 static OBJECT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -310,7 +311,7 @@ pub struct FeasibilityVector(Vec<Option<u32>>);
 #[derive(Debug)]
 pub struct FeasibilityCriteria(pub Vec<FeasiblityCriterion>);
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct FeasiblityCriterion {
     pub name: String,
     pub id: String,

@@ -24,25 +24,24 @@ fn main() -> io::Result<()> {
     let md = metadata(&directory_name).unwrap();
 
     if md.is_dir() {
-        // let definition = read_criteria_definition(&directory_name);
+        // parse criteria.json with FeasibilityCriteria
+        let definition_file_path = format!("{}/{}", &directory_name, "criteria.json");
+        let file_contents = fs::read_to_string(&definition_file_path)
+            .expect(&format!("Could not read file {}", &definition_file_path));
+        let criteria: Vec<FeasiblityCriterion> = serde_json::from_str(&file_contents).expect("criteria file parser error");
+        let definition = Rc::new(FeasibilityCriteria(criteria));
 
-        // ToDo: deserialize this from file
-        let definition: Rc<FeasibilityCriteria> = Rc::new(FeasibilityCriteria(vec![
-            FeasiblityCriterion {
-                name: "Knowledge".to_string(),
-                id: "Kn".to_string(),
-            },
-            FeasiblityCriterion {
-                name: "Equipment".to_string(),
-                id: "Eq".to_string(),
-            },
-        ]));
-
+        // filter attack tree files
         let paths = fs::read_dir(&directory_name).expect("Error listing files");
-
         let attack_tree_files: Vec<DirEntry> = paths
             .filter_map(Result::ok)
-            .filter(|e| if let Some(e) = e.path().extension() { e == "att"} else { false })
+            .filter(|e| {
+                if let Some(e) = e.path().extension() {
+                    e == "att"
+                } else {
+                    false
+                }
+            })
             .collect();
 
         // render each file to png
