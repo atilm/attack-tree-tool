@@ -21,20 +21,12 @@ enum ParserState {
     SkipToLineEnd,
 }
 
-enum NodeType {
-    Unknown,
-    AndNode,
-    OrNode,
-    Leaf,
-}
-
 pub struct AttackTreeParser {
     state: ParserState,
     title: String,
     assessment_value: String,
     assessment_title: String,
     parsed_assessments: HashMap<String, u32>,
-    current_node_type: NodeType,
     indentation_counter: u32,
     previous_indentation: u32,
     current_indentation: u32,
@@ -50,7 +42,6 @@ impl AttackTreeParser {
             assessment_value: String::new(),
             assessment_title: String::new(),
             parsed_assessments: HashMap::new(),
-            current_node_type: NodeType::Unknown,
             indentation_counter: 0,
             previous_indentation: 0,
             current_indentation: 0,
@@ -80,7 +71,6 @@ impl AttackTreeParser {
                 }
                 ParserState::DeterminingNodeType => {
                     if c == '&' {
-                        self.current_node_type = NodeType::AndNode;
                         self.add_node(Rc::new(AndNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -89,7 +79,6 @@ impl AttackTreeParser {
                         self.state = ParserState::SkipToLineEnd;
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
-                        self.current_node_type = NodeType::OrNode;
                         self.add_node(Rc::new(OrNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -97,7 +86,6 @@ impl AttackTreeParser {
                         )));
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c != ' ' {
-                        self.current_node_type = NodeType::Leaf;
                         self.set_state(ParserState::InAssessmentName);
                         self.assessment_title.push(c);
                     }
@@ -254,8 +242,6 @@ mod tests {
     use super::*;
     use crate::model::tests::*;
     use std::io;
-
-    // Unknown category
 
     #[test]
     fn read_a_file_with_one_leaf() {
