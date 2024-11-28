@@ -1,6 +1,6 @@
 use std::{
     env,
-    fs::{metadata, File},
+    fs::{self, metadata, DirEntry, File},
     io::{self, BufReader},
     rc::Rc,
 };
@@ -19,12 +19,13 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    let file_or_directory_name = args[0].clone();
+    let directory_name = args[0].clone();
 
-    let md = metadata(&file_or_directory_name).unwrap();
+    let md = metadata(&directory_name).unwrap();
 
-    if md.is_file() {
-        
+    if md.is_dir() {
+        // let definition = read_criteria_definition(&directory_name);
+
         // ToDo: deserialize this from file
         let definition: Rc<FeasibilityCriteria> = Rc::new(FeasibilityCriteria(vec![
             FeasiblityCriterion {
@@ -35,19 +36,36 @@ fn main() -> io::Result<()> {
                 name: "Equipment".to_string(),
                 id: "Eq".to_string(),
             },
-            ]));
-            
-        let f = File::open(&file_or_directory_name)?;
-        let mut f = BufReader::new(f);
-        let mut parser = AttackTreeParser::new();
+        ]));
 
-        // ToDo: output error line
-        let attack_tree_root = parser.parse(&mut f, &definition).expect("Error in tree file");
+        let paths = fs::read_dir(&directory_name).expect("Error listing files");
 
-        let image_file_name = format!("{}.png", &file_or_directory_name);
-        render_to_png(&attack_tree_root, &image_file_name).expect(&format!("Error rendering file {}", &image_file_name));
+        let attack_tree_files: Vec<DirEntry> = paths
+            .filter_map(Result::ok)
+            .filter(|e| if let Some(e) = e.path().extension() { e == "att"} else { false })
+            .collect();
+
+        // render each file to png
+        for file_entry in attack_tree_files {
+            let file_path = file_entry.path();
+            let f = File::open(&file_path)?;
+            let mut f = BufReader::new(f);
+
+            let mut parser = AttackTreeParser::new();
+            let attack_tree_root = parser
+                .parse(&mut f, &definition)
+                .expect("Error in tree file");
+
+            let image_file_path = file_path
+                .with_extension("png")
+                .to_str()
+                .expect("Could not convert target path to str.")
+                .to_string();
+
+            render_to_png(&attack_tree_root, &image_file_path)
+                .expect(&format!("Error rendering file {}", &image_file_path));
+        }
     }
-
 
     Ok(())
 }
