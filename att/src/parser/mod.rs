@@ -81,10 +81,6 @@ impl AttackTreeParser {
                 ParserState::DeterminingNodeType => {
                     if c == '&' {
                         self.current_node_type = NodeType::AndNode;
-
-                        // ToDo: call of update_current_node() and add_node() is repeated
-                        // several times. Make this one call again.
-                        self.update_current_node();
                         self.add_node(Rc::new(AndNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -94,7 +90,6 @@ impl AttackTreeParser {
                         self.set_state(ParserState::SkipToLineEnd);
                     } else if c == '|' {
                         self.current_node_type = NodeType::OrNode;
-                        self.update_current_node();
                         self.add_node(Rc::new(OrNode::new(
                             &self.title,
                             self.current_node.clone(),
@@ -120,6 +115,7 @@ impl AttackTreeParser {
                     } else {
                         self.previous_indentation = self.current_indentation;
                         self.current_indentation = self.indentation_counter;
+                        self.update_current_node();
 
                         self.set_state(ParserState::InTitle);
                         self.title.push(c);
@@ -138,7 +134,6 @@ impl AttackTreeParser {
                         self.set_state(ParserState::InAssessmentName);
                     } else if c == '\n' {
                         self.commit_assessment()?;
-                        self.update_current_node();
                         self.add_node(self.build_leaf(&definition));
                         self.set_state(ParserState::DeterminingIndentationLevel);
                     } else {
@@ -151,7 +146,6 @@ impl AttackTreeParser {
         // handle leafs at end of file
         if let ParserState::InAssessmentValue = self.state {
             self.commit_assessment()?;
-            self.update_current_node();
             self.add_node(self.build_leaf(&definition));
         }
 
