@@ -87,7 +87,7 @@ mod tests {
 
 node [shape=box]
 
-1 [label="Step 1\nKn=15, Eq=5"]
+1 [label="Step 1\n20\nKn=15, Eq=5"]
 
 
 
@@ -116,8 +116,8 @@ node [shape=box]
 
 node [shape=box]
 
-1 [label="Root" shape=trapezium]
-2 [label="Step 1\nKn=15, Eq=5"]
+1 [label="Root\n20\nKn=15, Eq=5" shape=trapezium]
+2 [label="Step 1\n20\nKn=15, Eq=5"]
 
 1 -> 2;
 
@@ -146,8 +146,8 @@ node [shape=box]
 
 node [shape=box]
 
-1 [label="Root" shape=invtrapezium]
-2 [label="Step 1\nKn=15, Eq=5"]
+1 [label="Root\n20\nKn=15, Eq=5" shape=invtrapezium]
+2 [label="Step 1\n20\nKn=15, Eq=5"]
 
 1 -> 2;
 
@@ -208,13 +208,13 @@ node [shape=box]
 
 node [shape=box]
 
-1 [label="Root" shape=trapezium]
-2 [label="First Sub" shape=trapezium]
-3 [label="Leaf 1\nKn=1, Eq=5"]
-4 [label="Leaf 2\nKn=3, Eq=1"]
-5 [label="Second Sub" shape=invtrapezium]
-6 [label="Leaf 3\nKn=2, Eq=14"]
-7 [label="Leaf 4\nKn=20, Eq=1"]
+1 [label="Root\n17\nKn=3, Eq=14" shape=trapezium]
+2 [label="First Sub\n8\nKn=3, Eq=5" shape=trapezium]
+3 [label="Leaf 1\n6\nKn=1, Eq=5"]
+4 [label="Leaf 2\n4\nKn=3, Eq=1"]
+5 [label="Second Sub\n16\nKn=2, Eq=14" shape=invtrapezium]
+6 [label="Leaf 3\n16\nKn=2, Eq=14"]
+7 [label="Leaf 4\n21\nKn=20, Eq=1"]
 
 1 -> 2;
 2 -> 3;

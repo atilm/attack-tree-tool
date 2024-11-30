@@ -1,4 +1,8 @@
-use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize, sync::atomic::Ordering};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -37,6 +41,31 @@ pub trait FeasibleStep {
     fn render(&self) -> String;
 
     fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>>;
+}
+
+fn render(step: &dyn FeasibleStep, shape_str: &str) -> String {
+    let assessment = step.feasibility();
+
+    if assessment.is_err() {
+        return format!(r#"label="{}"#, step.title());
+    }
+
+    let assessment = assessment.unwrap();
+    let assessment_strings: Vec<String> = assessment
+        .definition
+        .0
+        .iter()
+        .zip(assessment.assessments.0)
+        .map(|(c, v)| format!("{}={}", c.id, v.unwrap_or(0)))
+        .collect();
+
+    format!(
+        r#"label="{}\n{}\n{}"{}"#,
+        step.title(),
+        step.feasibility_value(),
+        assessment_strings.join(", "),
+        shape_str
+    )
 }
 
 pub struct OrNode {
@@ -97,7 +126,7 @@ impl FeasibleStep for OrNode {
     }
 
     fn render(&self) -> String {
-        format!(r#"label="{}" shape=invtrapezium"#, self.description)
+        render(self, " shape=invtrapezium")
     }
 
     fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
@@ -170,7 +199,7 @@ impl FeasibleStep for AndNode {
     }
 
     fn render(&self) -> String {
-        format!(r#"label="{}" shape=trapezium"#, self.description)
+        render(self, " shape=trapezium")
     }
 
     fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
@@ -239,20 +268,7 @@ impl FeasibleStep for Leaf {
     }
 
     fn render(&self) -> String {
-        let assessment_strings: Vec<String> = self
-            .criteria
-            .definition
-            .0
-            .iter()
-            .zip(&self.criteria.assessments.0)
-            .map(|(c, v)| format!("{}={}", c.id, v.unwrap_or(0)))
-            .collect();
-
-        format!(
-            r#"label="{}\n{}""#,
-            self.description,
-            assessment_strings.join(", ")
-        )
+        render(self, "")
     }
 
     fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
@@ -325,7 +341,8 @@ pub mod tests {
     use crate::model::TreeError;
 
     use super::{
-        generate_id, AndNode, FeasibilityAssessment, FeasibilityCriteria, FeasibleStep, FeasiblityCriterion, Leaf, OrNode
+        generate_id, AndNode, FeasibilityAssessment, FeasibilityCriteria, FeasibleStep,
+        FeasiblityCriterion, Leaf, OrNode,
     };
 
     pub fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
