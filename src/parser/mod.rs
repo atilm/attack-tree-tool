@@ -2,6 +2,7 @@ use std::{collections::HashMap, io::BufRead, rc::Rc};
 
 use crate::model::*;
 
+use feasible_step::FeasibleStep;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]

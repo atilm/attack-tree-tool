@@ -5,7 +5,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::model::FeasibleStep;
+use crate::model::feasible_step::FeasibleStep;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum RenderError {
@@ -61,7 +61,7 @@ node [shape=box]
 
 fn flatten(node: &Rc<dyn FeasibleStep>, result: &mut Vec<Rc<dyn FeasibleStep>>) {
     result.push(node.clone());
-    
+
     for c in node.get_children() {
         flatten(&c, result);
     }
@@ -69,9 +69,10 @@ fn flatten(node: &Rc<dyn FeasibleStep>, result: &mut Vec<Rc<dyn FeasibleStep>>) 
 
 #[cfg(test)]
 mod tests {
+    use crate::model::feasible_step::FeasibleStep;
     use std::rc::Rc;
 
-    use crate::model::{tests::build_criteria, AndNode, FeasibleStep, Leaf, OrNode};
+    use crate::model::{tests::build_criteria, AndNode, Leaf, OrNode};
 
     use super::render_to_dot_string;
 

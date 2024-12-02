@@ -1,28 +1,35 @@
 use std::{
     env,
     fs::{self, metadata, DirEntry, File},
-    io::{self, BufReader},
+    io::BufReader,
     path::PathBuf,
+    process::exit,
     rc::Rc,
 };
 
 use att::{
-    model::{FeasibilityCriteria, FeasibleStep, FeasiblityCriterion},
+    model::{feasible_step::FeasibleStep, FeasibilityCriteria, FeasiblityCriterion},
     parser::AttackTreeParser,
     render::render_to_png,
 };
 
-fn main() -> io::Result<()> {
+fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
     if args.len() != 1 {
         eprintln!("Usage: att <file or directory name>");
-        return Ok(());
+        exit(1);
     }
 
     let directory_name = args[0].clone();
 
-    let md = metadata(&directory_name).unwrap();
+    let md = match metadata(&directory_name) {
+        Ok(m) => m,
+        Err(e) => {
+            println!("{}: {}", e, directory_name);
+            exit(1);
+        }
+    };
 
     if md.is_dir() {
         // parse criteria.json with FeasibilityCriteria
@@ -50,7 +57,7 @@ fn main() -> io::Result<()> {
         let attack_trees = parse_attack_trees(&attack_tree_files, &definition);
 
         // render each tree to png
-        for (file_path, attack_tree_root) in attack_trees {
+        for (file_path, attack_tree_root) in &attack_trees {
             let image_file_path = file_path
                 .with_extension("png")
                 .to_str()
@@ -61,8 +68,6 @@ fn main() -> io::Result<()> {
                 .expect(&format!("Error rendering file {}", &image_file_path));
         }
     }
-
-    Ok(())
 }
 
 fn parse_attack_trees(
