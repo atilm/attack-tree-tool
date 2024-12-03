@@ -1,4 +1,4 @@
-* insert link to trees pngs into overview markdown file
+* parse damage scenarios, impact assessments, relate them to thread scenarios and calculate risk
 * split long mod.rs files into multiple files
 * better error handling (replace unwrap and some except)
 * handle windows newlines

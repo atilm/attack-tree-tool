@@ -1,8 +1,9 @@
 use std::{
     env,
+    ffi::OsStr,
     fs::{self, metadata, DirEntry, File},
     io::BufReader,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::exit,
     rc::Rc,
 };
@@ -61,25 +62,38 @@ fn main() {
     // parse attack tree files
     let attack_trees = parse_attack_trees(&attack_tree_files, &definition);
 
+    let images_dir = Path::new("images");
+    let absolute_images_dir = Path::new(&directory_name).join(images_dir);
+    if fs::create_dir_all(&absolute_images_dir).is_err() {
+        println!("Could not create {:?}", &absolute_images_dir)
+    }
+
     // render each tree to png
     for (file_path, attack_tree_root) in &attack_trees {
-        let image_file_path = file_path
-            .with_extension("png")
-            .to_str()
-            .expect("Could not convert target path to str.")
-            .to_string();
-
-        render_to_png(&attack_tree_root, &image_file_path)
-            .expect(&format!("Error rendering file {}", &image_file_path));
+        let image_file_path = &to_image_path(&absolute_images_dir, file_path);
+        render_to_png(&attack_tree_root, image_file_path)
+            .expect(&format!("Error rendering file {:?}", image_file_path));
     }
 
     // render to markdown overview file
     let threats_file_path = format!("{}/threats.md", directory_name);
-    let root_nodes: Vec<&Rc<dyn FeasibleStep>> = attack_trees.iter().map(|(_, r)| r).collect();
+
+    let root_nodes: Vec<_> = attack_trees
+        .iter()
+        .map(|(f, r)| (to_image_path(images_dir, f), r))
+        .collect();
 
     if let Err(e) = fs::write(&threats_file_path, render_to_markdown_table(root_nodes)) {
         println!("Error writing file {}: {}", &threats_file_path, e);
     }
+}
+
+fn to_image_path(images_dir: &Path, attack_tree_path: &PathBuf) -> PathBuf {
+    
+    images_dir.join(
+        Path::new(attack_tree_path.file_name().unwrap_or(OsStr::new("image")))
+            .with_extension("png"),
+    )
 }
 
 fn parse_attack_trees(

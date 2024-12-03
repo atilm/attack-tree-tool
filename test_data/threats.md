@@ -1,4 +1,4 @@
-| Threat Id | Threat                       | Feasbility | Impact | Risk |
-| --------- | ---------------------------- | ---------- | ------ | ---- |
-| 0         | Steal letter from letter box | 5          |        |      |
-| 7         | Enter house                  | 7          |        |      |
+| Threat Scenario                                          | Feasbility | Impact | Risk |
+| -------------------------------------------------------- | ---------- | ------ | ---- |
+| [Steal letter from letter box](images/test_tree_two.png) | 5          |        |      |
+| [Enter house](images/test_tree.png)                      | 7          |        |      |

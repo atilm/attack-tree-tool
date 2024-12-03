@@ -1,21 +1,32 @@
+use markdown_table_formatter::format_tables;
+use std::io;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::{
     io::Write,
     process::{Command, Stdio},
 };
 use thiserror::Error;
-use markdown_table_formatter::format_tables;
 
 use crate::model::feasible_step::FeasibleStep;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum RenderError {
+    #[error("Path error")]
+    PathError,
     #[error("File write error")]
-    FileWriteError,
+    FileWriteError(#[from] io::Error),
 }
 
-pub fn render_to_png(root_node: &Rc<dyn FeasibleStep>, file_path: &str) -> std::io::Result<()> {
+pub fn render_to_png(
+    root_node: &Rc<dyn FeasibleStep>,
+    file_path: &PathBuf,
+) -> Result<(), RenderError> {
     let dot_file_content = render_to_dot_string(root_node).expect("render to dot-file error");
+    let file_path = match file_path.to_str() {
+        Some(f) => f,
+        None => return Err(RenderError::PathError),
+    };
 
     let mut child = Command::new("dot")
         .args(["-Tpng", "-o", file_path])
@@ -68,12 +79,17 @@ fn flatten(node: &Rc<dyn FeasibleStep>, result: &mut Vec<Rc<dyn FeasibleStep>>) 
     }
 }
 
-pub fn render_to_markdown_table(root_nodes: Vec<&Rc<dyn FeasibleStep>>) -> String {
-    let mut result = "| Threat Id | Threat | Feasbility | Impact | Risk |\n".to_string();
-    result.push_str("|--|--|--|--|--|\n");
+pub fn render_to_markdown_table(attack_trees: Vec<(PathBuf, &Rc<dyn FeasibleStep>)>) -> String {
+    let mut result = "| Threat Scenario | Feasbility | Impact | Risk |\n".to_string();
+    result.push_str("|--|--|--|--|\n");
 
-    for node in root_nodes {
-        result.push_str(&format!("| {} | {} | {} | | |\n", node.id(), node.title(), node.feasibility_value()));
+    for (image_path, root_node) in attack_trees {
+        result.push_str(&format!(
+            "| [{}]({}) | {} | | |\n",
+            root_node.title(),
+            image_path.to_str().unwrap_or(""),
+            root_node.feasibility_value()
+        ));
     }
 
     format_tables(result)
