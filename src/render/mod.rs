@@ -4,6 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 use thiserror::Error;
+use markdown_table_formatter::format_tables;
 
 use crate::model::feasible_step::FeasibleStep;
 
@@ -75,7 +76,7 @@ pub fn render_to_markdown_table(root_nodes: Vec<&Rc<dyn FeasibleStep>>) -> Strin
         result.push_str(&format!("| {} | {} | {} | | |\n", node.id(), node.title(), node.feasibility_value()));
     }
 
-    result
+    format_tables(result)
 }
 
 #[cfg(test)]
