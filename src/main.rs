@@ -10,6 +10,7 @@ use std::{
 use att::{
     model::{feasible_step::FeasibleStep, FeasibilityCriteria, FeasiblityCriterion},
     parser::AttackTreeParser,
+    render::render_to_markdown_table,
     render::render_to_png,
 };
 
@@ -31,42 +32,53 @@ fn main() {
         }
     };
 
-    if md.is_dir() {
-        // parse criteria.json with FeasibilityCriteria
-        let definition_file_path = format!("{}/{}", &directory_name, "criteria.json");
-        let file_contents = fs::read_to_string(&definition_file_path)
-            .expect(&format!("Could not read file {}", &definition_file_path));
-        let criteria: Vec<FeasiblityCriterion> =
-            serde_json::from_str(&file_contents).expect("criteria file parser error");
-        let definition = Rc::new(FeasibilityCriteria(criteria));
+    if !md.is_dir() {
+        println!("'{}' is not a directory.", &directory_name);
+        exit(1);
+    }
 
-        // filter attack tree files
-        let paths = fs::read_dir(&directory_name).expect("Error listing files");
-        let attack_tree_files: Vec<DirEntry> = paths
-            .filter_map(Result::ok)
-            .filter(|e| {
-                if let Some(e) = e.path().extension() {
-                    e == "att"
-                } else {
-                    false
-                }
-            })
-            .collect();
+    // parse criteria.json with FeasibilityCriteria
+    let definition_file_path = format!("{}/{}", &directory_name, "criteria.json");
+    let file_contents = fs::read_to_string(&definition_file_path)
+        .expect(&format!("Could not read file {}", &definition_file_path));
+    let criteria: Vec<FeasiblityCriterion> =
+        serde_json::from_str(&file_contents).expect("criteria file parser error");
+    let definition = Rc::new(FeasibilityCriteria(criteria));
 
-        // parse attack tree files
-        let attack_trees = parse_attack_trees(&attack_tree_files, &definition);
+    // filter attack tree files
+    let paths = fs::read_dir(&directory_name).expect("Error listing files");
+    let attack_tree_files: Vec<DirEntry> = paths
+        .filter_map(Result::ok)
+        .filter(|e| {
+            if let Some(e) = e.path().extension() {
+                e == "att"
+            } else {
+                false
+            }
+        })
+        .collect();
 
-        // render each tree to png
-        for (file_path, attack_tree_root) in &attack_trees {
-            let image_file_path = file_path
-                .with_extension("png")
-                .to_str()
-                .expect("Could not convert target path to str.")
-                .to_string();
+    // parse attack tree files
+    let attack_trees = parse_attack_trees(&attack_tree_files, &definition);
 
-            render_to_png(&attack_tree_root, &image_file_path)
-                .expect(&format!("Error rendering file {}", &image_file_path));
-        }
+    // render each tree to png
+    for (file_path, attack_tree_root) in &attack_trees {
+        let image_file_path = file_path
+            .with_extension("png")
+            .to_str()
+            .expect("Could not convert target path to str.")
+            .to_string();
+
+        render_to_png(&attack_tree_root, &image_file_path)
+            .expect(&format!("Error rendering file {}", &image_file_path));
+    }
+
+    // render to markdown overview file
+    let threats_file_path = format!("{}/threats.md", directory_name);
+    let root_nodes: Vec<&Rc<dyn FeasibleStep>> = attack_trees.iter().map(|(_, r)| r).collect();
+
+    if let Err(e) = fs::write(&threats_file_path, render_to_markdown_table(root_nodes)) {
+        println!("Error writing file {}: {}", &threats_file_path, e);
     }
 }
 

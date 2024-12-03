@@ -67,6 +67,17 @@ fn flatten(node: &Rc<dyn FeasibleStep>, result: &mut Vec<Rc<dyn FeasibleStep>>) 
     }
 }
 
+pub fn render_to_markdown_table(root_nodes: Vec<&Rc<dyn FeasibleStep>>) -> String {
+    let mut result = "| Threat Id | Threat | Feasbility | Impact | Risk |\n".to_string();
+    result.push_str("|--|--|--|--|--|\n");
+
+    for node in root_nodes {
+        result.push_str(&format!("| {} | {} | {} | | |\n", node.id(), node.title(), node.feasibility_value()));
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use crate::model::feasible_step::FeasibleStep;
