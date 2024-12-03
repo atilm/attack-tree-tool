@@ -100,7 +100,7 @@ mod tests {
     use crate::model::feasible_step::FeasibleStep;
     use std::rc::Rc;
 
-    use crate::model::{tests::build_criteria, AndNode, Leaf, OrNode};
+    use crate::model::{tests::build_criteria, AndNode, Leaf, or_node::OrNode};
 
     use super::render_to_dot_string;
 

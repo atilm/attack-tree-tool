@@ -4,11 +4,12 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use feasible_step::FeasibleStep;
+use feasible_step::*;
 use serde::Deserialize;
 use thiserror::Error;
 
 pub mod feasible_step;
+pub mod or_node;
 
 static OBJECT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -20,103 +21,6 @@ pub fn generate_id() -> u32 {
 pub enum TreeError {
     #[error("Length mismatch between assessment vector and definition")]
     AssessmentVectorMismatch,
-}
-
-fn render(step: &dyn FeasibleStep, shape_str: &str) -> String {
-    let assessment = step.feasibility();
-
-    if assessment.is_err() {
-        return format!(r#"label="{}"#, step.title());
-    }
-
-    let assessment = assessment.unwrap();
-    let assessment_strings: Vec<String> = assessment
-        .definition
-        .0
-        .iter()
-        .zip(assessment.assessments.0)
-        .map(|(c, v)| format!("{}={}", c.id, v.unwrap_or(0)))
-        .collect();
-
-    format!(
-        r#"label="{}\n{}\n{}"{}"#,
-        step.title(),
-        step.feasibility_value(),
-        assessment_strings.join(", "),
-        shape_str
-    )
-}
-
-pub struct OrNode {
-    pub id: u32,
-    pub description: String,
-    pub parent: Option<Rc<dyn FeasibleStep>>,
-    pub children: RefCell<Vec<Rc<dyn FeasibleStep>>>,
-}
-
-impl OrNode {
-    pub fn new<F>(title: &str, parent: Option<Rc<dyn FeasibleStep>>, id_gen: F) -> OrNode
-    where
-        F: Fn() -> u32,
-    {
-        OrNode {
-            id: id_gen(),
-            description: title.to_string(),
-            parent,
-            children: RefCell::new(vec![]),
-        }
-    }
-}
-
-impl FeasibleStep for OrNode {
-    fn id(&self) -> u32 {
-        self.id
-    }
-
-    fn feasibility(&self) -> Result<FeasibilityAssessment, TreeError> {
-        if self.children.borrow().is_empty() {
-            return Err(TreeError::AssessmentVectorMismatch);
-        }
-
-        let min_feasibility = self
-            .children
-            .borrow()
-            .iter()
-            .map(|s| s.feasibility().unwrap())
-            .min_by_key(|f| f.sum());
-
-        Ok(min_feasibility.unwrap())
-    }
-
-    fn title(&self) -> &str {
-        &self.description
-    }
-
-    fn add_child(&self, child: &Rc<dyn FeasibleStep>) {
-        self.children.borrow_mut().push(child.clone());
-    }
-
-    fn get_parent(&self) -> Option<Rc<dyn FeasibleStep>> {
-        if let Some(s) = &self.parent {
-            return Some(s.clone());
-        }
-
-        None
-    }
-
-    fn render(&self) -> String {
-        render(self, " shape=invtrapezium")
-    }
-
-    fn get_children(&self) -> Vec<Rc<dyn FeasibleStep>> {
-        let mut v = Vec::new();
-
-        for c in self.children.borrow().iter() {
-            v.push(c.clone())
-        }
-
-        v
-    }
 }
 
 pub struct AndNode {
@@ -321,8 +225,9 @@ pub mod tests {
 
     use super::{
         generate_id, AndNode, FeasibilityAssessment, FeasibilityCriteria, FeasibleStep,
-        FeasiblityCriterion, Leaf, OrNode,
+        FeasiblityCriterion, Leaf,
     };
+    use crate::model::or_node::OrNode;
 
     pub fn build_criteria(names: &[&str]) -> Rc<FeasibilityCriteria> {
         Rc::new(FeasibilityCriteria(
